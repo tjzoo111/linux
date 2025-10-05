@@ -399,19 +399,17 @@ out:
 	nf_ct_put(ct);
 	return taken;
 }
-
+//检查源ip(网络层字段) 在某范围内
 static bool nf_nat_inet_in_range(const struct nf_conntrack_tuple *t,
 				 const struct nf_nat_range2 *range)
 {
 	if (t->src.l3num == NFPROTO_IPV4)
-		return ntohl(t->src.u3.ip) >= ntohl(range->min_addr.ip) &&
-		       ntohl(t->src.u3.ip) <= ntohl(range->max_addr.ip);
+		return ntohl(t->src.u3.ip) >= ntohl(range->min_addr.ip) && ntohl(t->src.u3.ip) <= ntohl(range->max_addr.ip);
 
-	return ipv6_addr_cmp(&t->src.u3.in6, &range->min_addr.in6) >= 0 &&
-	       ipv6_addr_cmp(&t->src.u3.in6, &range->max_addr.in6) <= 0;
+	return ipv6_addr_cmp(&t->src.u3.in6, &range->min_addr.in6) >= 0 && ipv6_addr_cmp(&t->src.u3.in6, &range->max_addr.in6) <= 0;
 }
 
-/* Is the manipable part of the tuple between min and max incl? */
+//检查 id  port (传输层字段)在某范围内
 static bool l4proto_in_range(const struct nf_conntrack_tuple *tuple,
 			     enum nf_nat_manip_type maniptype,
 			     const union nf_conntrack_man_proto *min,
@@ -441,26 +439,20 @@ static bool l4proto_in_range(const struct nf_conntrack_tuple *tuple,
 	}
 }
 
-/* If we source map this tuple so reply looks like reply_tuple, will
- * that meet the constraints of range.
- */
+//网络层在某范围
 static int nf_in_range(const struct nf_conntrack_tuple *tuple,
 		    const struct nf_nat_range2 *range)
 {
-	/* If we are supposed to map IPs, then we must be in the
-	 * range specified, otherwise let this drag us onto a new src IP.
-	 */
-	if (range->flags & NF_NAT_RANGE_MAP_IPS &&
-	    !nf_nat_inet_in_range(tuple, range))
+	//有映射标记 且 不在范围内 返回0
+	if (range->flags & NF_NAT_RANGE_MAP_IPS && !nf_nat_inet_in_range(tuple, range))
 		return 0;
-
+        //无端口范围要求 返回1
 	if (!(range->flags & NF_NAT_RANGE_PROTO_SPECIFIED))
 		return 1;
-
-	return l4proto_in_range(tuple, NF_NAT_MANIP_SRC,
-				&range->min_proto, &range->max_proto);
+        //端口范围检查
+	return l4proto_in_range(tuple, NF_NAT_MANIP_SRC, &range->min_proto, &range->max_proto);
 }
-
+//检查tuple的sip,sport,协议  ;  和 已连接ct 对比  ,存在返回1
 static inline int
 same_src(const struct nf_conn *ct,
 	 const struct nf_conntrack_tuple *tuple)
@@ -519,36 +511,29 @@ find_best_ips_proto(const struct nf_conntrack_zone *zone,
 	u32 minip, maxip, j, dist;
 	bool full_range;
 
-	/* No IP mapping?  Do nothing. */
+	//无映射标记 跳出
 	if (!(range->flags & NF_NAT_RANGE_MAP_IPS))
 		return;
-
+        //源IP/目的IP  映射
 	if (maniptype == NF_NAT_MANIP_SRC)
 		var_ipp = &tuple->src.u3;
 	else
 		var_ipp = &tuple->dst.u3;
 
-	/* Fast path: only one choice. */
+	//若给定的ip范围只有一个ip    跳出
 	if (nf_inet_addr_cmp(&range->min_addr, &range->max_addr)) {
 		*var_ipp = range->min_addr;
 		return;
 	}
-
+	//ip4 max=0   ip6 max=3  ,一次处理4字节 所以 ip4 1次  ip6 4次
 	if (nf_ct_l3num(ct) == NFPROTO_IPV4)
 		max = sizeof(var_ipp->ip) / sizeof(u32) - 1;
 	else
 		max = sizeof(var_ipp->ip6) / sizeof(u32) - 1;
 
-	/* Hashing source and destination IPs gives a fairly even
-	 * spread in practice (if there are a small number of IPs
-	 * involved, there usually aren't that many connections
-	 * anyway).  The consistency means that servers see the same
-	 * client coming from the same IP (some Internet Banking sites
-	 * like this), even across reboots.
-	 */
+	// 非持久 ip4 异或 网卡(出发点不同 终点一样的hash基数不一样)
 	j = jhash2((u32 *)&tuple->src.u3, sizeof(tuple->src.u3) / sizeof(u32),
-		   range->flags & NF_NAT_RANGE_PERSISTENT ?
-			0 : (__force u32)tuple->dst.u3.all[max] ^ zone->id);
+		   range->flags & NF_NAT_RANGE_PERSISTENT ? 0 : (__force u32)tuple->dst.u3.all[max] ^ zone->id);
 
 	full_range = false;
 	for (i = 0; i <= max; i++) {
